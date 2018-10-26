@@ -114,7 +114,11 @@ def make_basic_query():
                 "must": [],
                 "must_not": [],
                 "should": [],
-                "filter": {}
+                "filter": {
+                    "bool": {
+                        "must": []
+                    }
+                }
             }
         },
         "sort": [],
@@ -122,22 +126,100 @@ def make_basic_query():
     }
 
 
+# 파라메터에 따라 Query DSL 생성
+def make_search_condition(from_num, keyword_p):
+    parser = reqparse.RequestParser()
+    parser.add_argument('best_yn')
+    parser.add_argument('new_yn')
+    parser.add_argument('reg_date')
+    parser.add_argument('view_cnt')
+    parser.add_argument('s_reg_date')
+    args = parser.parse_args()
+    body_obj = make_basic_query()
+    body_obj['from'] = from_num
+    # 검색조건
+    if keyword_p is not None:
+        body_obj['query']['bool']['must'].append({
+            "multi_match": {
+                "query": keyword_p,
+                "fields": [
+                    "goodsname_nm^3",
+                    "content",
+                    "description"
+                ],
+                "fuzziness": "AUTO"
+            }
+        })
+    # Filter 조건
+    if 'best_yn' in args and args['best_yn']:
+        body_obj['query']['bool']['filter']['bool']['must'].append({
+            "term": {
+                "best_yn.keyword": args['best_yn']
+            }
+        })
+    if 'new_yn' in args and args['new_yn']:
+        body_obj['query']['bool']['filter']['bool']['must'].append({
+            "term": {
+                "new_yn.keyword": args['new_yn']
+            }
+        })
+    if 'reg_date' in args and args['reg_date']:
+        body_obj['query']['bool']['filter']['bool']['must'].append({
+            "range": {
+                'reg_date': {
+                    'gte': args['reg_date']
+                }
+            }
+        })
+    if 'view_cnt' in args and args['view_cnt']:
+        body_obj['query']['bool']['filter']['bool']['must'].append({
+            "range": {
+                'view_cnt': {
+                    'gte': args['view_cnt']
+                }
+            }
+        })
+    # sort 조건
+    if 's_reg_date' in args and args['s_reg_date']:
+        body_obj['sort'].append({
+            "reg_date": {
+                "order": args['s_reg_date']
+            }
+        })
+    # Output Field 제한
+    body_obj['_source'] = [
+        "group_nm",
+        "goodsname_nm",
+        "goods_id",
+        "cate1_code",
+        "cate2_code",
+        "content",
+        "description",
+        "best_yn",
+        "new_yn",
+        "user_id",
+        "reg_date"
+    ]
+    return body_obj
+
+
 # 단어 검색 샘플 API - 페이징 처리 시 scroll 사용
 class KeywordSearch(Resource):
     def get(self, keyword_p):
         if keyword_p is None:
             return make_error_message(1)
-        body_obj = make_basic_query()
+        body_obj = make_search_condition(0, keyword_p)
+        body_obj['query']['bool']['must'].clear()
         body_obj['query']['bool']['must'].append({
             "match": {
                 "goodsname_nm": {
-                    "query": keyword_p
+                    "query": keyword_p,
+                    "fuzziness": "AUTO"
                 }
             }
         })
         del body_obj['from']
         del body_obj['size']
-        del body_obj['query']['bool']['filter']
         res = search.search(
             index='search-nori-sample1',
             body=body_obj,
@@ -165,17 +247,18 @@ class TextSearch(Resource):
     def get(self, keyword_p):
         if keyword_p is None:
             return make_error_message(1)
-        body_obj = make_basic_query()
+        body_obj = make_search_condition(0, keyword_p)
+        body_obj['query']['bool']['must'].clear()
         body_obj['query']['bool']['must'].append({
             "match_phrase": {
                 "goodsname_nm": {
-                    "query": keyword_p
+                    "query": keyword_p,
+                    "slop": 5
                 }
             }
         })
         del body_obj['from']
         del body_obj['size']
-        del body_obj['query']['bool']['filter']
         res = search.search(
             index='search-nori-sample1',
             body=body_obj,
@@ -206,84 +289,29 @@ class KeywordSearchPaging(Resource):
         from_num = get_curr_from(page)
         if keyword_p is None:
             return make_error_message(1)
-        body_obj = make_basic_query()
-        body_obj['from'] = from_num
+        body_obj = make_search_condition(from_num, keyword_p)
+        body_obj['query']['bool']['must'].clear()
         body_obj['query']['bool']['must'].append({
             "match": {
                 "goodsname_nm": {
-                    "query": keyword_p
+                    "query": keyword_p,
+                    "fuzziness": "AUTO"
                 }
             }
         })
-        del body_obj['query']['bool']['filter']
         res = search.search(
             index='search-nori-sample1',
             body=body_obj
         )
         return make_search_result_page(res, page, from_num)
 
-    # 검색 시 조건 사용 예제 : bool, filter, sort, _source
     def post(self, page, keyword_p):
         if page is None:
             page = 1
         from_num = get_curr_from(page)
         if keyword_p is None:
             return make_error_message(1)
-        parser = reqparse.RequestParser()
-        parser.add_argument('best_yn')
-        parser.add_argument('new_yn')
-        parser.add_argument('reg_date')
-        parser.add_argument('s_reg_date')
-        args = parser.parse_args()
-        body_obj = make_basic_query()
-        body_obj['from'] = from_num
-        if keyword_p is not None:
-            body_obj['query']['bool']['must'].append({
-                "match": {
-                    "goodsname_nm": {
-                        "query": keyword_p
-                    }
-                }
-            })
-        if 'best_yn' in args and args['best_yn']:
-            body_obj['query']['bool']['must'].append({
-                "term": {
-                    "best_yn.keyword": args['best_yn']
-                }
-            })
-        if 'new_yn' in args and args['new_yn']:
-            body_obj['query']['bool']['must'].append({
-                "term": {
-                    "new_yn.keyword": args['new_yn']
-                }
-            })
-        if 'reg_date' in args and args['reg_date']:
-            body_obj['query']['bool']['filter']['range'] = {
-                'reg_date': {
-                    'gte': args['reg_date']
-                }
-            }
-        else:
-            del body_obj['query']['bool']['filter']
-        if 's_reg_date' in args and args['s_reg_date']:
-            body_obj['sort'].append({
-                "reg_date": {
-                    "order": args['s_reg_date']
-                }
-            })
-        body_obj['_source'] = [
-            "group_nm",
-            "goodsname_nm",
-            "goods_id",
-            "cate1_code",
-            "cate2_code",
-            "content",
-            "description",
-            "best_yn",
-            "new_yn",
-            "user_id",
-            "reg_date"
-        ]
+        body_obj = make_search_condition(from_num, keyword_p)
         res = search.search(
             index='search-nori-sample1',
             body=body_obj
@@ -299,16 +327,16 @@ class TextSearchPaging(Resource):
         from_num = get_curr_from(page)
         if keyword_p is None:
             return make_error_message(1)
-        body_obj = make_basic_query()
-        body_obj['from'] = from_num
+        body_obj = make_search_condition(from_num, keyword_p)
+        body_obj['query']['bool']['must'].clear()
         body_obj['query']['bool']['must'].append({
             "match_phrase": {
                 "goodsname_nm": {
-                    "query": keyword_p
+                    "query": keyword_p,
+                    "slop": 5
                 }
             }
         })
-        del body_obj['query']['bool']['filter']
         res = search.search(
             index='search-nori-sample1',
             body=body_obj
