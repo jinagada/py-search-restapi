@@ -2,7 +2,10 @@ from flask import Flask, g
 from flask_restful import Resource, Api, reqparse
 from werkzeug.local import LocalProxy
 from elasticsearch import Elasticsearch
+from kafka import KafkaProducer
+from kafka.errors import KafkaError
 import logging
+import json
 
 app = Flask(__name__)
 api = Api(app)
@@ -344,11 +347,46 @@ class TextSearchPaging(Resource):
         return make_search_result_page(res, page, from_num)
 
 
+def get_kafka_conn():
+    # create logger instance
+    # if 'logger' not in globals():
+    #     fn_create_logger()
+    _producer = getattr(g, 'producer', None)
+    # if _producer is None:
+    #     _producer = g.producer = KafkaProducer(bootstrap_servers=['kafka:9092'],
+    #                                            value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode('utf-8'),
+    #                                            acks=0,
+    #                                            linger_ms=5,
+    #                                            batch_size=500000)
+    return _producer
+
+
+# Kafka API 테스트용
+class KafkaIFTest(Resource):
+    def post(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('topic', type=str)
+        parser.add_argument('field', type=str)
+        args = parser.parse_args()
+
+        print(args['topic'])
+        print(args['field'])
+
+        json_txt = args['field'].replace("'", "\"")
+        json_txt = json.loads(json_txt)
+
+        # producer.send(topic=args['topic'], value=json_txt)
+        # producer.flush()
+        print(json_txt)
+
+
 api.add_resource(KeywordSearch, '/keyword/<string:keyword_p>')
 api.add_resource(TextSearch, '/text/<string:keyword_p>')
 api.add_resource(KeywordSearchPaging, '/keyword/<int:page>/<string:keyword_p>')
 api.add_resource(TextSearchPaging, '/text/<int:page>/<string:keyword_p>')
+api.add_resource(KafkaIFTest, '/kafka_api')
 search = LocalProxy(get_search_conn)
+producer = LocalProxy(get_kafka_conn)
 
 if __name__ == '__main__':
     app.run()
