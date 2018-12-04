@@ -4,8 +4,13 @@ from werkzeug.local import LocalProxy
 from elasticsearch import Elasticsearch
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
+from random import randint
+from requests import post
+from io import BytesIO
 import logging
 import json
+import datetime
+import pycurl
 
 app = Flask(__name__)
 api = Api(app)
@@ -23,16 +28,18 @@ consoleHandler.setFormatter(formatter)
 # add the handlers to logger
 es_logger.addHandler(consoleHandler)
 
+elasticsearch_server = [
+    'https://elastic:elastic!@192.168.56.101:9200',
+    'https://elastic:elastic!@192.168.56.102:9200',
+    'https://elastic:elastic!@192.168.56.103:9200'
+]
+
 
 # Elasticsearch Node Connection
 def get_search_conn():
     if '_elasticsearch' not in g:
         g._elasticsearch = Elasticsearch(
-            [
-                'https://kibanaro:kibanaro@192.168.56.101:9200',
-                'https://kibanaro:kibanaro@192.168.56.102:9200',
-                'https://kibanaro:kibanaro@192.168.56.103:9200'
-            ],
+            elasticsearch_server,
             ca_certs=False,
             verify_certs=False
         )
@@ -347,17 +354,39 @@ class TextSearchPaging(Resource):
         return make_search_result_page(res, page, from_num)
 
 
+def fn_create_logger():
+    global logger
+    logger = logging.getLogger('kafka_api')
+    formatter = logging.Formatter(
+        '%(asctime)s %(levelname)s : %(message)s [%(filename)s:%(lineno)s]'
+    )
+    # 파일 출력 핸들러 만들기
+    # 로그파일을 maxBytes(10MB) 까지 기록하고 파일 갯수는 backupCount(10) 수 까지 파일을 남긴다.
+    file_handler = logging.handlers.RotatingFileHandler(
+        '/var/log/kafka_api/app.log',
+        maxBytes=1024 * 1024 * 10,
+        backupCount=10
+    )
+    # 핸들러에 포메터를 지정한다.
+    file_handler.setFormatter(formatter)
+    # 로거 인스턴스에 파일 핸들러 추가하기
+    logger.addHandler(file_handler)
+    # 로거 인스턴스 생
+    logger.setLevel(logging.DEBUG)
+
+
 def get_kafka_conn():
     # create logger instance
-    # if 'logger' not in globals():
-    #     fn_create_logger()
+    if 'logger' not in globals():
+        fn_create_logger()
     _producer = getattr(g, 'producer', None)
-    # if _producer is None:
-    #     _producer = g.producer = KafkaProducer(bootstrap_servers=['kafka:9092'],
-    #                                            value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode('utf-8'),
-    #                                            acks=0,
-    #                                            linger_ms=5,
-    #                                            batch_size=500000)
+    if _producer is None:
+        _producer = g.producer = KafkaProducer(bootstrap_servers=['kafka:9092'],
+                                               value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode(
+                                                   'utf-8'),
+                                               acks=0,
+                                               linger_ms=5,
+                                               batch_size=500000)
     return _producer
 
 
@@ -380,11 +409,138 @@ class KafkaIFTest(Resource):
         print(json_txt)
 
 
+# 조회를 위한 Index 설정
+def get_index(code):
+    if code == 1:
+        index = "bigginsight"
+    else:
+        index = "bigginsight"
+    return index
+
+
+# 조회용 SQL 작성
+def make_search_sql(code, keyword):
+    parser = reqparse.RequestParser()
+    parser.add_argument('category')
+    args = parser.parse_args()
+    sql = 'select * from "%s" where 1 = 1 ' % get_index(code)
+    # @timestamp 컬럼 테스트
+    day_100 = datetime.timedelta(days=100)
+    day_100_ago = datetime.datetime.now() - day_100
+    sql = sql + 'and "@timestamp" >= \'%s\' ' % day_100_ago.strftime('%Y-%m-%dT00:00:00')
+    if keyword:
+        sql = sql + "and match('username', '%s') " % keyword
+    if 'category' in args and args['category']:
+        sql = sql + "and category = '%s' " % args['category']
+    sql = sql + "order by accessPointId "
+    return sql
+
+
+# Elasticsearch SQL을 Query DSL로 변환(Requests 사용)
+def call_elasticsearch_sql_by_requests(sql):
+    elasticsearch_sql = {"query": sql}
+    url = elasticsearch_server[randint(0, 2)] + '/_xpack/sql/translate'
+    res = post(url, json=elasticsearch_sql, verify=False)
+    return res.json()
+
+
+# Elasticsearch SQL을 Query DSL로 변환(pycURL 사용)
+def call_elasticsearch_sql_by_pycurl(sql):
+    # StringIO 가 안되는 경우 BytesIO 를 사용
+    result = BytesIO()
+    conn = pycurl.Curl()
+    url = elasticsearch_server[randint(0, 2)] + '/_xpack/sql/translate'
+    conn.setopt(pycurl.URL, url)
+    conn.setopt(pycurl.POST, True)
+    conn.setopt(pycurl.SSL_VERIFYPEER, False)
+    conn.setopt(pycurl.HTTPHEADER, ['Content-type:application/json;charset=utf-8'])
+    # 파라메터 설정
+    elasticsearch_sql = {"query": sql}
+    conn.setopt(pycurl.POSTFIELDS, json.dumps(elasticsearch_sql))
+    # 결과 설정
+    conn.setopt(pycurl.WRITEFUNCTION, result.write)
+    # 실행
+    conn.perform()
+    res = result.getvalue().decode('UTF-8')
+    # 반드시 Close 할 것!!
+    result.close()
+    conn.close()
+    # 결과값은 문자열이므로 객체로 사용 시 변환이 필요함
+    return json.loads(res)
+
+
+# 페이징 처리
+def make_paging(query, from_num, row_per_page):
+    tmp_query = query
+    tmp_query['from'] = from_num
+    tmp_query['size'] = row_per_page
+    tmp_query['_source'] = [
+        "category",
+        "path",
+        "band",
+        "username",
+        "accessPointId",
+        "mac",
+        "department",
+        "networkId",
+        "application",
+        "customer",
+        "host"
+    ]
+    return tmp_query
+
+
+# Elasticsearch에 조회 요청 : Query DSL 사용
+def call_elasticsearch(code, param):
+    res = search.search(
+        index=get_index(code),
+        body=param
+    )
+    return res
+
+
+# Elasticsearch SQL 을 사용한 조회 테스트(Requests)
+class RequestsCallTest(Resource):
+    def post(self, code):
+        if code is None:
+            return make_error_message(1)
+        parser = reqparse.RequestParser()
+        parser.add_argument('pageIndex')
+        parser.add_argument('pageSize')
+        parser.add_argument('keyword')
+        args = parser.parse_args()
+        # SQL 생성
+        sql_param = make_search_sql(code, args['keyword'])
+        # SQL -> Query DSL 변환
+        # query_dsl = call_elasticsearch_sql_by_requests(sql_param)
+        query_dsl = call_elasticsearch_sql_by_pycurl(sql_param)
+        # 페이징 처리
+        # 현재 페이지
+        if 'pageIndex' not in args or not args['pageIndex']:
+            page = 1
+        else:
+            page = int(args['pageIndex'])
+        # 페이지 당 보기수
+        if 'pageSize' not in args or not args['pageSize']:
+            row_per_page = 20
+        else:
+            row_per_page = int(args['pageSize'])
+        # 조회 시작 번호
+        from_num = get_curr_from(page)
+        # Query DSL에 페이징 처리
+        search_query = make_paging(query_dsl, from_num, row_per_page)
+        # Elasticsearch 호출
+        res = call_elasticsearch(code, search_query)
+        # 결과값 정리
+        return make_search_result_page(res, page, from_num)
+
+
 api.add_resource(KeywordSearch, '/keyword/<string:keyword_p>')
 api.add_resource(TextSearch, '/text/<string:keyword_p>')
 api.add_resource(KeywordSearchPaging, '/keyword/<int:page>/<string:keyword_p>')
 api.add_resource(TextSearchPaging, '/text/<int:page>/<string:keyword_p>')
 api.add_resource(KafkaIFTest, '/kafka_api')
+api.add_resource(RequestsCallTest, '/search/<int:code>')
 search = LocalProxy(get_search_conn)
 producer = LocalProxy(get_kafka_conn)
 
