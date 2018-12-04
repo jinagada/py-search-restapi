@@ -419,21 +419,58 @@ def get_index(code):
 
 
 # 조회용 SQL 작성
-def make_search_sql(code, keyword):
+def make_search_sql(code):
+    sql = (
+        # SELECT Condition
+        'SELECT * FROM "%s" WHERE 1 = 1 ' % get_index(code)
+        # WHERE Condition
+        + " {timestamp} {keyword} {category}"
+        # ORDER BY Condition
+        + " {sort}"
+    ).format(
+        timestamp=condition_timestamp(),
+        keyword=condition_keyword(),
+        category=condition_category(),
+        sort=condition_sort()
+    )
+    return sql
+
+
+# @timestamp 컬럼 테스트
+def condition_timestamp():
+    day_100 = datetime.timedelta(days=100)
+    day_100_ago = datetime.datetime.now() - day_100
+    sql = 'AND "@timestamp" >= \'%s\'' % day_100_ago.strftime('%Y-%m-%dT00:00:00')
+    return sql
+
+
+# 검색어
+def condition_keyword():
+    parser = reqparse.RequestParser()
+    parser.add_argument('keyword')
+    args = parser.parse_args()
+    if 'keyword' in args and args['keyword']:
+        sql = "AND MATCH('username', '%s') " % args['keyword']
+    else:
+        sql = ""
+    return sql
+
+
+# 카테고리
+def condition_category():
     parser = reqparse.RequestParser()
     parser.add_argument('category')
     args = parser.parse_args()
-    sql = 'select * from "%s" where 1 = 1 ' % get_index(code)
-    # @timestamp 컬럼 테스트
-    day_100 = datetime.timedelta(days=100)
-    day_100_ago = datetime.datetime.now() - day_100
-    sql = sql + 'and "@timestamp" >= \'%s\' ' % day_100_ago.strftime('%Y-%m-%dT00:00:00')
-    if keyword:
-        sql = sql + "and match('username', '%s') " % keyword
     if 'category' in args and args['category']:
-        sql = sql + "and category = '%s' " % args['category']
-    sql = sql + "order by accessPointId "
+        sql = "AND category = '%s'" % args['category']
+    else:
+        sql = ""
     return sql
+
+
+# 정렬조건
+def condition_sort():
+    return "ORDER BY accessPointId asc"
 
 
 # Elasticsearch SQL을 Query DSL로 변환(Requests 사용)
@@ -507,10 +544,9 @@ class RequestsCallTest(Resource):
         parser = reqparse.RequestParser()
         parser.add_argument('pageIndex')
         parser.add_argument('pageSize')
-        parser.add_argument('keyword')
         args = parser.parse_args()
         # SQL 생성
-        sql_param = make_search_sql(code, args['keyword'])
+        sql_param = make_search_sql(code)
         # SQL -> Query DSL 변환
         # query_dsl = call_elasticsearch_sql_by_requests(sql_param)
         query_dsl = call_elasticsearch_sql_by_pycurl(sql_param)
