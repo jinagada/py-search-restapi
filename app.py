@@ -99,7 +99,11 @@ def make_error_message(error_type):
 
 
 # 페이지 번호로 from 값 계산
-def get_curr_from(page):
+def get_curr_from(page, row_per_page):
+    if row_per_page is None:
+        row_count = 20
+    else:
+        row_count = row_per_page
     if page is None:
         curr_page = 1
     else:
@@ -110,7 +114,7 @@ def get_curr_from(page):
     if curr_page == 1:
         curr_from = 0
     else:
-        curr_from = (20 * (page - 1))
+        curr_from = (row_count * (page - 1))
     return curr_from
 
 
@@ -562,7 +566,7 @@ class RequestsCallTest(Resource):
         else:
             row_per_page = int(args['pageSize'])
         # 조회 시작 번호
-        from_num = get_curr_from(page)
+        from_num = get_curr_from(page, row_per_page)
         # Query DSL에 페이징 처리
         search_query = make_paging(query_dsl, from_num, row_per_page)
         # Elasticsearch 호출
