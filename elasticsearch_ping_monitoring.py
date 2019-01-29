@@ -76,17 +76,23 @@ class ElasticsearchPing:
         # StringIO 가 안되는 경우 BytesIO 를 사용
         result = BytesIO()
         conn = pycurl.Curl()
-        conn.setopt(pycurl.URL, url)
-        conn.setopt(pycurl.HTTPGET, True)
-        conn.setopt(pycurl.SSL_VERIFYPEER, False)
-        conn.setopt(pycurl.USERPWD, self.elasticsearch_userpw)
-        conn.setopt(pycurl.WRITEFUNCTION, result.write)
-        # 실행
-        conn.perform()
-        res = result.getvalue().decode('UTF-8')
-        # 반드시 Close 할 것!!
-        result.close()
-        conn.close()
+        try:
+            conn.setopt(pycurl.URL, url)
+            conn.setopt(pycurl.HTTPGET, True)
+            conn.setopt(pycurl.SSL_VERIFYPEER, False)
+            conn.setopt(pycurl.USERPWD, self.elasticsearch_userpw)
+            conn.setopt(pycurl.WRITEFUNCTION, result.write)
+            # 실행
+            conn.perform()
+            res = result.getvalue().decode('UTF-8')
+        except pycurl.err as err:
+            raise err
+        except Exception as err:
+            raise err
+        finally:
+            # 반드시 Close 할 것!!
+            result.close()
+            conn.close()
         return res
 
     def check_ping_result(self, result: str) -> str:
