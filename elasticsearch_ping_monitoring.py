@@ -128,8 +128,7 @@ class ElasticsearchPing:
         :return: 없음
         """
         count = 0
-        title = ""
-        message = ""
+        os.system("clear")
         for url in self.elasticsearch_server:
             start_time = datetime.utcnow()
             try:
@@ -140,11 +139,8 @@ class ElasticsearchPing:
             diff_time = end_time - start_time
             server_status = self.check_ping_result(result)
             if count == 0:
-                title = "ping time : %s" % self.change_kor_time(start_time)
-            message = message + "server : %s, res time : %s seconds, status : %s\n" % (url, diff_time, server_status)
-        os.system("clear")
-        print(title)
-        print(message)
+                print("ping time : %s" % self.change_kor_time(start_time))
+            print("server : %s, res time : %s seconds, status : %s" % (url, diff_time, server_status))
 
 
 if __name__ == '__main__':
