@@ -30,7 +30,7 @@ class ElasticsearchPing:
             "CURL": "\033[4m",
             "CBLINK": "\033[5m",
             "CBLINK2": "\033[6m",
-            "CLELECTED": "\033[7m",
+            "CSELECTED": "\033[7m",
             # ANSI 글자색
             "CBLACK": "\033[30m",
             "CRED": "\033[31m",
