@@ -141,7 +141,7 @@ class ElasticsearchPing:
             server_status = self.check_ping_result(result)
             if count == 0:
                 title = "ping time : %s" % self.change_kor_time(start_time)
-            message = message + "server : %s, req time : %s seconds, status : %s\n" % (url, diff_time, server_status)
+            message = message + "server : %s, res time : %s seconds, status : %s\n" % (url, diff_time, server_status)
         os.system("clear")
         print(title)
         print(message)
