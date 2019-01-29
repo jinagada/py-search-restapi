@@ -149,7 +149,7 @@ class ElasticsearchPing:
 
 if __name__ == '__main__':
     """
-    실행 명령어 : /home/apidev/anaconda3/envs/enroll_list_restapi/bin/python /home/apidev/anaconda3/envs/enroll_list_restapi/script/elasticsearch_ping_monitoring.py
+    실행 명령어 : /home/apidev/anaconda3/envs/project/bin/python /home/apidev/anaconda3/envs/project/script/elasticsearch_ping_monitoring.py
     """
     ping = ElasticsearchPing()
     while True:
