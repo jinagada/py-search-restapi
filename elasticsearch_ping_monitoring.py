@@ -4,17 +4,21 @@ import json
 import pycurl
 import os
 import time
+import asyncio
 
 
 class ElasticsearchPing:
     """
     Elasticsearch Node Server Ping 프로그램 - Linux 콘솔용
     현재 동작여부만 판단하여 알려줌
+    서버 확인을 비동기 방식으로 변경
     """
     def __init__(self):
         """
         내부 사용 번수 설정
         """
+        # Async 객체 선언
+        self.loop = asyncio.get_event_loop()
         # Elasticsearch API URL
         self.elasticsearch_userpw = "elastic:elastic1#"
         self.elasticsearch_server = [
@@ -85,7 +89,7 @@ class ElasticsearchPing:
             # 실행
             conn.perform()
             res = result.getvalue().decode('UTF-8')
-        except pycurl.err as err:
+        except pycurl.error as err:
             raise err
         except Exception as err:
             raise err
@@ -122,25 +126,46 @@ class ElasticsearchPing:
         time_gap = timedelta(hours=9)
         return now + time_gap
 
-    def elasticsearch_ping(self):
+    def elasticsearch_ping(self, server_url):
         """
-        변수에 설정된 Elasticsearch Node 서버 목록 전체를 호출하여 현재 상태 확인
+        변수에 설정된 Elasticsearch Node 서버를 호출하여 현재 상태 확인
+        PyCulr 호출 후 추가 정보를 같이 반환하기 위해서 별도의 메서드로 작성
+        :param server_url: Elasticsearch Node Server Url
+        :return: url, diff_time, server_status
+        """
+        url = server_url
+        start_time = datetime.utcnow()
+        try:
+            result = self.call_elasticsearch_by_pycurl(url)
+        except Exception as err:
+            result = str(err)
+        end_time = datetime.utcnow()
+        diff_time = end_time - start_time
+        server_status = self.check_ping_result(result)
+        return url, diff_time, server_status
+
+    async def print_ping(self, server_url):
+        """
+        변수에 설정된 Elasticsearch Node 서버를 호출하여 현재 상태 확인 후 결과 값 print
+        PyCurl은 Async 방식을 지원하지 않기 때문에 asyncio 를 사용하여 강제로 Async 방식으로 실행
+        :param server_url: Elasticsearch Node Server Url
+        :return: url, diff_time, server_status
+        """
+        # run_in_executor 를 사용하여 강제로 Async 방식을 사용
+        url, diff_time, server_status = await self.loop.run_in_executor(None, self.elasticsearch_ping, server_url)
+        print("server : %s, res time : %s seconds, status : %s" % (url, diff_time, server_status))
+
+    def ping_all(self):
+        """
+        서버 목록에 있는 모든 Elasticsearch Node 서버의 상태 확인
+        Async 방식으로 작성한 print_ping 을 호출 하여 각 서버의 응답을 먼저 확인 되는 순서로 보여줌
         :return: 없음
         """
-        count = 0
         os.system("clear")
-        for url in self.elasticsearch_server:
-            start_time = datetime.utcnow()
-            try:
-                result = self.call_elasticsearch_by_pycurl(url)
-            except Exception as err:
-                result = str(err)
-            end_time = datetime.utcnow()
-            diff_time = end_time - start_time
-            server_status = self.check_ping_result(result)
-            if count == 0:
-                print("ping time : %s" % self.change_kor_time(start_time))
-            print("server : %s, res time : %s seconds, status : %s" % (url, diff_time, server_status))
+        print("ping time : %s" % self.change_kor_time(datetime.utcnow()))
+        # asyncio 를 사용하여 서버 목록을 Async 방식으로 전달
+        futures = [self.print_ping(url) for url in self.elasticsearch_server]
+        self.loop.run_until_complete(asyncio.wait(futures))
 
 
 if __name__ == '__main__':
@@ -149,5 +174,5 @@ if __name__ == '__main__':
     """
     ping = ElasticsearchPing()
     while True:
-        ping.elasticsearch_ping()
+        ping.ping_all()
         time.sleep(5)
