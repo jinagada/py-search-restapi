@@ -5,6 +5,7 @@ import pycurl
 import os
 import time
 import asyncio
+import subprocess
 
 
 class ElasticsearchPing:
@@ -26,6 +27,8 @@ class ElasticsearchPing:
             'https://elastic-02:9200',
             'https://elastic-03:9200'
         ]
+        self.server_id = "hunetelk"
+        self.server_pw = "hunetelk!"
         self.ansi_formatters = {
             # ANSI Controll 문자
             "CEND": "\033[0m",
@@ -131,7 +134,7 @@ class ElasticsearchPing:
         변수에 설정된 Elasticsearch Node 서버를 호출하여 현재 상태 확인
         PyCulr 호출 후 추가 정보를 같이 반환하기 위해서 별도의 메서드로 작성
         :param server_url: Elasticsearch Node Server Url
-        :return: url, diff_time, server_status
+        :return: url, diff_time, elastic_status, server_info
         """
         url = server_url
         start_time = datetime.utcnow()
@@ -141,8 +144,26 @@ class ElasticsearchPing:
             result = str(err)
         end_time = datetime.utcnow()
         diff_time = end_time - start_time
-        server_status = self.check_ping_result(result)
-        return url, diff_time, server_status
+        elastic_status = self.check_ping_result(result)
+        server_info = self.elasticsearch_server_ping(server_url)
+        return url, diff_time, elastic_status, server_info
+
+    def elasticsearch_server_ping(self, server_url):
+        """
+        변수에 설정된 Elasticsearch Node 서버의 하드웨어 상태 확인
+        :param server_url: Elasticsearch Node Server Url
+        :return: cpu 사용율, 메모리 사용율, 디스크 사용율
+        """
+        login = "sshpass -p '%s' ssh -o StrictHostKeyChecking=no %s@%s"\
+                   % (self.server_pw, self.server_id, server_url[8:-5])
+        command_cpu = login + " top -b -n 10 -d.2 | grep 'Cpu' | awk 'NR==3{printf \"%s\", $2 }'"
+        cpu = subprocess.check_output(command_cpu, shell=True)
+        command_mem = login + " free -m | awk 'NR==2{printf \"%.2f%%\", $3*100/$2 }'"
+        mem = subprocess.check_output(command_mem, shell=True)
+        command_disk = login + " df -h | awk '$NF==\"/\"{printf \"%s\", $5 }'"
+        disk = subprocess.check_output(command_disk, shell=True)
+        result = "cpu : {}%, mem : {}, disk : {}".format(str(cpu)[2:-1], str(mem)[2:-1], str(disk)[2:-1])
+        return result
 
     async def print_ping(self, server_url):
         """
@@ -152,8 +173,10 @@ class ElasticsearchPing:
         :return: url, diff_time, server_status
         """
         # run_in_executor 를 사용하여 강제로 Async 방식을 사용
-        url, diff_time, server_status = await self.loop.run_in_executor(None, self.elasticsearch_ping, server_url)
-        print("server : %s, res time : %s seconds, status : %s" % (url, diff_time, server_status))
+        url, diff_time, elastic_status, server_info = await self.loop.run_in_executor(None, self.elasticsearch_ping,
+                                                                                      server_url)
+        print("server : %s, elastic res time : %s seconds, status : %s, %s"
+              % (url, diff_time, elastic_status, server_info))
 
     def ping_all(self):
         """
