@@ -27,8 +27,8 @@ class ElasticsearchPing:
             'https://elastic-02:9200',
             'https://elastic-03:9200'
         ]
-        self.server_id = "hunetelk"
-        self.server_pw = "hunetelk!"
+        self.server_id = "yourid"
+        self.server_pw = "yourid!"
         self.ansi_formatters = {
             # ANSI Controll 문자
             "CEND": "\033[0m",
