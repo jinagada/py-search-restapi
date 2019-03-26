@@ -80,8 +80,7 @@ class DictionaryDeployment:
         try:
             print("%s copy start : %s -> %s" % (str(datetime.now()), local_path, node_path))
             copy_command = "sshpass -p '%s' scp -o StrictHostKeyChecking=no %s %s@%s:%s" \
-                           % (self.server_pw, local_path, self.server_id, server_url[8:-5],
-                              node_path)
+                           % (self.server_pw, local_path, self.server_id, server_url[8:-5], node_path)
             subprocess.check_call(copy_command, shell=True)
             print("%s copy end : %s -> %s" % (str(datetime.now()), local_path, node_path))
         except Exception as err:
@@ -122,6 +121,7 @@ class DictionaryDeployment:
             result_json = json.loads(res)
             if "error" in result_json and result_json["error"]:
                 # 오류 발생 시 Exception 생성
+                print(res)
                 msg = result_json["error"]["type"] + ":" + result_json["error"]["reason"]
                 raise Exception(msg)
             else:
