@@ -6,6 +6,7 @@ import os
 import time
 import asyncio
 import subprocess
+import traceback
 
 
 class ElasticsearchPing:
@@ -93,8 +94,10 @@ class ElasticsearchPing:
             conn.perform()
             res = result.getvalue().decode('UTF-8')
         except pycurl.error as err:
+            traceback.print_exc()
             raise err
         except Exception as err:
+            traceback.print_exc()
             raise err
         finally:
             # 반드시 Close 할 것!!
@@ -154,12 +157,15 @@ class ElasticsearchPing:
         :param server_url: Elasticsearch Node Server Url
         :return: cpu 사용율, 메모리 사용율, 디스크 사용율
         """
-        login = "sshpass -p '%s' ssh -o StrictHostKeyChecking=no %s@%s"\
-                   % (self.server_pw, self.server_id, server_url[8:-5])
+        login = "sshpass -p '%s' ssh -o StrictHostKeyChecking=no %s@%s" \
+                % (self.server_pw, self.server_id, server_url[8:-5])
+        # CPU 사용율 확인
         command_cpu = login + " top -b -n 10 -d.2 | grep 'Cpu' | awk 'NR==3{printf \"%s\", $2 }'"
         cpu = subprocess.check_output(command_cpu, shell=True)
+        # 메모리 사용율 확인
         command_mem = login + " free -m | awk 'NR==2{printf \"%.2f%%\", $3*100/$2 }'"
         mem = subprocess.check_output(command_mem, shell=True)
+        # 디스크 사용율 확인
         command_disk = login + " df -h | awk '$NF==\"/\"{printf \"%s\", $5 }'"
         disk = subprocess.check_output(command_disk, shell=True)
         result = "cpu : {}%, mem : {}, disk : {}".format(str(cpu)[2:-1], str(mem)[2:-1], str(disk)[2:-1])
@@ -193,7 +199,8 @@ class ElasticsearchPing:
 
 if __name__ == '__main__':
     """
-    실행 명령어 : /home/yourid/anaconda3/envs/project/bin/python /home/yourid/anaconda3/envs/project/script/elasticsearch_ping_monitoring.py
+    실행 명령어 :
+    /home/yourid/anaconda3/envs/project/bin/python /home/yourid/anaconda3/envs/project/script/elasticsearch_ping_monitoring.py
     """
     ping = ElasticsearchPing()
     while True:
