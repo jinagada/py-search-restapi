@@ -78,11 +78,11 @@ class DictionaryDeployment:
         :return:
         """
         try:
-            print("%s copy start : %s -> %s" % (str(datetime.now()), local_path, node_path))
+            print("%s copy start[%s] : %s -> %s" % (str(datetime.now()), server_url[8:-5], local_path, node_path))
             copy_command = "sshpass -p '%s' scp -o StrictHostKeyChecking=no %s %s@%s:%s" \
                            % (self.server_pw, local_path, self.server_id, server_url[8:-5], node_path)
             subprocess.check_call(copy_command, shell=True)
-            print("%s copy end : %s -> %s" % (str(datetime.now()), local_path, node_path))
+            print("%s copy end[%s] : %s -> %s" % (str(datetime.now()), server_url[8:-5], local_path, node_path))
         except Exception as err:
             traceback.print_exc()
             raise err
